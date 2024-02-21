@@ -5,7 +5,7 @@ import React from 'react'
 
 const MemberProfile = async () => {
     const user = await currentUser()
-    const { userId } = auth()
+    // const { userId } = auth()
   return (
     <div className='px-4 flex items-center gap-2'>
       <UserButton afterSignOutUrl='/' />
