@@ -6,12 +6,16 @@ import { getExistingTour, generateTourResponse, createNewTour } from '@/utils/ac
 import toast from 'react-hot-toast'
 
 const NewTour = () => {
-
+    const queryClient = useQueryClient();
     const {mutate,isPending,data:tour} = useMutation({
         mutationFn: async (destination) => {
+            const existingTour = await getExistingTour(destination);
+            if (existingTour) return existingTour;
             const newTour = await generateTourResponse(destination)
             if (newTour) {
-                return newTour
+                await createNewTour(newTour);
+                queryClient.invalidateQueries({ queryKey: ['tours'] });
+                return newTour;
             }
             toast.error('No matching city found')
             return null
