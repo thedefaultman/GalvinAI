@@ -2,7 +2,7 @@
 
 import OpenAI from "openai"
 import prisma from './db';
-
+import { revalidatePath } from "next/cache";
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 })
@@ -15,10 +15,14 @@ export const generateChatResponse = async (chatMessages) => {
                 ...chatMessages
             ],
             model: 'gpt-3.5-turbo',
-            temperature: 0.1
+            temperature: 0.1,
+            max_tokens: 500,
         })
     
-        return response.choices[0].message
+        return {
+            message: response.choices[0].message,
+            tokens: response.usage.total_tokens,
+        };
     } catch (error) {
         return null
     }
@@ -54,7 +58,7 @@ export const generateTourResponse = async ({city, country}) => {
         if (!tourData.tour) {
             return null
         }
-        return tourData.tour
+        return { tour: tourData.tour, tokens: response.usage.total_tokens };
 
     } catch (error) {
         console.log(error);
@@ -134,4 +138,50 @@ export const getExistingTour = async ({ city, country }) => {
     } catch (error) {
       return null;
     }
+  };
+
+
+
+  //token setup
+  export const fetchUserTokensById = async (clerkId) => {
+    const result = await prisma.token.findUnique({
+      where: {
+        clerkId,
+      },
+    });
+  
+    return result?.tokens;
+  };
+  
+  export const generateUserTokensForId = async (clerkId) => {
+    const result = await prisma.token.create({
+      data: {
+        clerkId,
+      },
+    });
+    return result?.tokens;
+  };
+  
+  export const fetchOrGenerateTokens = async (clerkId) => {
+    const result = await fetchUserTokensById(clerkId);
+    if (result) {
+      return result.tokens;
+    }
+    return (await generateUserTokensForId(clerkId)).tokens;
+  };
+  
+  export const subtractTokens = async (clerkId, tokens) => {
+    const result = await prisma.token.update({
+      where: {
+        clerkId,
+      },
+      data: {
+        tokens: {
+          decrement: tokens,
+        },
+      },
+    });
+    revalidatePath('/profile');
+    // Return the new token value
+    return result.tokens;
   };
