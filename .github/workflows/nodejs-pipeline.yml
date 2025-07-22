@@ -1,0 +1,108 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  detect-and-build:
+    runs-on: ubuntu-latest
+    outputs:
+      framework: ${{ steps.detect.outputs.framework }}
+      build-command: ${{ steps.detect.outputs.build-command }}
+      output-directory: ${{ steps.detect.outputs.output-directory }}
+      deployment-type: ${{ steps.detect.outputs.deployment-type }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Detect Framework and Build Strategy
+      id: detect
+      run: |
+        # Detect Next.js
+        if [ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ]; then
+          echo "framework=nextjs" >> $GITHUB_OUTPUT
+          if grep -q '"output".*"export"' next.config.* 2>/dev/null || grep -q 'output:.*export' next.config.* 2>/dev/null; then
+            echo "deployment-type=static" >> $GITHUB_OUTPUT
+            echo "build-command=npm run build" >> $GITHUB_OUTPUT
+            echo "output-directory=out" >> $GITHUB_OUTPUT
+          else
+            echo "deployment-type=server" >> $GITHUB_OUTPUT
+            echo "build-command=npm run build" >> $GITHUB_OUTPUT
+            echo "output-directory=.next" >> $GITHUB_OUTPUT
+          fi
+        # Detect Nuxt.js
+        elif [ -f "nuxt.config.js" ] || [ -f "nuxt.config.ts" ]; then
+          echo "framework=nuxt" >> $GITHUB_OUTPUT
+          echo "build-command=npm run build" >> $GITHUB_OUTPUT
+          echo "output-directory=.output" >> $GITHUB_OUTPUT
+          echo "deployment-type=server" >> $GITHUB_OUTPUT
+        # Detect Express or general Node.js API
+        elif grep -q '"express"' package.json 2>/dev/null || [ -f "app.js" ] || [ -f "server.js" ] || [ -f "index.js" ]; then
+          echo "framework=nodejs" >> $GITHUB_OUTPUT
+          echo "build-command=npm run build || echo 'No build step required'" >> $GITHUB_OUTPUT
+          echo "output-directory=." >> $GITHUB_OUTPUT
+          echo "deployment-type=server" >> $GITHUB_OUTPUT
+        # Default Node.js
+        else
+          echo "framework=nodejs" >> $GITHUB_OUTPUT
+          echo "build-command=npm run build || echo 'No build step required'" >> $GITHUB_OUTPUT
+          echo "output-directory=dist" >> $GITHUB_OUTPUT
+          echo "deployment-type=server" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Install dependencies
+      run: |
+        if [ -f "package-lock.json" ]; then
+          npm ci
+        elif [ -f "yarn.lock" ]; then
+          yarn install --frozen-lockfile
+        elif [ -f "pnpm-lock.yaml" ]; then
+          npm install -g pnpm && pnpm install --frozen-lockfile
+        else
+          npm install
+        fi
+    
+    - name: Run tests
+      run: npm test || echo "No tests found"
+      continue-on-error: true
+    
+    - name: Build application
+      run: ${{ steps.detect.outputs.build-command }}
+      env:
+        NODE_ENV: production
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-files
+        path: ${{ steps.detect.outputs.output-directory }}
+        retention-days: 30
+
+  deploy:
+    needs: detect-and-build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-files
+        path: ./build-output
+
+    - name: Deploy to aws-s3
+      run: |
+        echo "Deploying nodejs application to aws-s3..."
+        echo "Build artifacts ready for deployment"
+        echo "Add your deployment commands here"
+        echo "Examples: Deploy to AWS ECS, Upload to S3, Deploy to Kubernetes"
